@@ -6,6 +6,7 @@
 
 #include "Engine/Utility/Log.h"
 
+#define GREEN "\033[0;32m"
 #define WHITE "\033[0;97m"
 #define BLUE "\033[0;36m"
 #define YELLOW "\033[0;93m"
@@ -14,6 +15,55 @@
 
 namespace gp1
 {
+constexpr uint8_t allSeverities = uint8_t(Severity::Error) | uint8_t(Severity::Warning) | uint8_t(Severity::Debug) | uint8_t(Severity::Trace);
+
+static_assert(int(LogGroup::Count) < 256, "Maximum of 254 log groups allowed");
+uint8_t enabledSeverityByLogGroup[uint8_t(LogGroup::Count)]{ 0 };
+
+void initLog()
+{
+	for (uint8_t i = 0; i < uint8_t(LogGroup::Count); ++i)
+	{
+		enabledSeverityByLogGroup[i] = allSeverities;
+	}
+}
+
+inline bool canLog(LogGroup group, Severity severity)
+{
+	return enabledSeverityByLogGroup[uint8_t(group)] & uint8_t(severity);
+}
+
+void enableLogGroup(LogGroup group)
+{
+	enabledSeverityByLogGroup[uint8_t(group)] = allSeverities;
+}
+
+void enableLogGroup(LogGroup group, Severity severity)
+{
+	enabledSeverityByLogGroup[uint8_t(group)] |= uint8_t(severity);
+}
+
+void disableLogGroup(LogGroup group)
+{
+	enabledSeverityByLogGroup[uint8_t(group)] = 0;
+}
+
+void disableLogGroup(LogGroup group, Severity severity)
+{
+	enabledSeverityByLogGroup[uint8_t(group)] &= ~uint8_t(severity);
+}
+
+const char* logGroupToString(LogGroup group)
+{
+	switch (group)
+	{
+	case LogGroup::Default:
+		return "";
+	case LogGroup::TestGroup:
+		return "TestGroup";
+	}
+	return "";
+}
 
 bool fileLoggingEnabled = true;
 std::string logFilepath = "log.txt";
@@ -21,10 +71,12 @@ std::string logFilepath = "log.txt";
 // TODO(fkp): This currently opens the file each time we log. We
 // should instead probably save to a buffer first and flush it every
 // so often.
-void log(Severity severity, const char* format, ...)
+void vlog(LogGroup group, Severity severity, const char* format, va_list args)
 {
-	va_list args;
-	va_start(args, format);
+	if (!canLog(group, severity))
+	{
+		return;
+	}
 
 	FILE* file = nullptr;
 
@@ -63,6 +115,16 @@ void log(Severity severity, const char* format, ...)
 		if (file)
 		{
 			fprintf(file, "%s ", timeBuffer);
+		}
+	}
+
+	if (group != LogGroup::Default)
+	{
+		const char* g = logGroupToString(group);
+		printf(GREEN "%s ", g);
+		if (file)
+		{
+			fprintf(file, "%s ", g);
 		}
 	}
 	
@@ -113,12 +175,27 @@ void log(Severity severity, const char* format, ...)
 
 		fclose(file);
 	}
-	
+}
+
+void log(Severity severity, const char* format, ...)
+{
+	va_list args;
+	va_start(args, format);
+	vlog(LogGroup::Default, severity, format, args);
+	va_end(args);
+}
+
+void log(LogGroup group, Severity severity, const char* format, ...)
+{
+	va_list args;
+	va_start(args, format);
+	vlog(group, severity, format, args);
 	va_end(args);
 }
 
 }
 
+#undef GREEN
 #undef WHITE
 #undef BLUE
 #undef YELLOW
